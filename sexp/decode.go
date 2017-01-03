@@ -22,6 +22,8 @@ func decodeIntoValue(s *Scanner, v reflect.Value) error {
 	switch v.Kind() {
 	case reflect.String:
 		return decodeString(s, v)
+	case reflect.Int, reflect.Uint:
+		return decodeInt(s, v)
 	default:
 		return &InvalidDecodeError{v.Type()}
 	}
@@ -45,6 +47,43 @@ func decodeString(s *Scanner, v reflect.Value) error {
 			next.Type,
 		)
 	}
+
+	s.Read() // consume the token
+
+	return nil
+}
+
+func decodeInt(s *Scanner, v reflect.Value) error {
+	next := s.Peek()
+
+	switch next.Type {
+	case RAW_STRING:
+		switch v.Kind() {
+		// TODO: kicad additionally supports exponents
+		case reflect.Int:
+			val, err := strconv.ParseInt(next.Data, 10, 64)
+			if err != nil {
+				return err
+			}
+			v.SetInt(val)
+		case reflect.Uint:
+			val, err := strconv.ParseUint(next.Data, 10, 64)
+			if err != nil {
+				return err
+			}
+			v.SetUint(val)
+		default:
+			// should never happen because this is handled in caller
+			panic("invalid decodeInt target")
+		}
+	default:
+		return fmt.Errorf(
+			"unexpected %s while decoding into int",
+			next.Type,
+		)
+	}
+
+	s.Read() // consume the token
 
 	return nil
 }

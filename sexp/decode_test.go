@@ -13,6 +13,12 @@ func TestDecode_valid(t *testing.T) {
 	sptr := func(s string) *string {
 		return &s
 	}
+	iptr := func(i int) *int {
+		return &i
+	}
+	uiptr := func(i uint) *uint {
+		return &i
+	}
 
 	tests := []struct {
 		Input  string
@@ -68,6 +74,21 @@ func TestDecode_valid(t *testing.T) {
 			Input:  `true`,
 			Target: sptr(""),
 			Want:   sptr("true"),
+		},
+		{
+			Input:  `500`,
+			Target: iptr(0),
+			Want:   iptr(500),
+		},
+		{
+			Input:  `-500`,
+			Target: iptr(0),
+			Want:   iptr(-500),
+		},
+		{
+			Input:  `500`,
+			Target: uiptr(0),
+			Want:   uiptr(500),
 		},
 	}
 
