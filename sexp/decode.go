@@ -30,6 +30,8 @@ func decodeIntoValue(s *Scanner, v reflect.Value) error {
 		return decodeFloat(s, v)
 	case reflect.Slice:
 		return decodeSlice(s, v)
+	case reflect.Map:
+		return decodeMap(s, v)
 	default:
 		return &InvalidDecodeError{v.Type()}
 	}
@@ -169,6 +171,72 @@ func decodeSlice(s *Scanner, v reflect.Value) error {
 		}
 
 		ret = reflect.Append(ret, elem.Elem())
+	}
+
+	v.Set(ret)
+
+	return nil
+}
+
+func decodeMap(s *Scanner, v reflect.Value) error {
+	next := s.Peek()
+	if next.Type != LEFT {
+		return fmt.Errorf(
+			"map value cannot begin with %s", next.Type,
+		)
+	}
+	s.Read() // consume parenthesis
+
+	ret := reflect.MakeMap(v.Type())
+
+	keyType := v.Type().Key()
+	valType := v.Type().Elem()
+	for {
+		next := s.Peek()
+		if next.Type == RIGHT {
+			s.Read() // consume parenthesis
+			break
+		}
+		if next.Type == EOF {
+			return fmt.Errorf(
+				"unexpected EOF while decoding slice value",
+			)
+		}
+
+		if next.Type != LEFT {
+			return fmt.Errorf(
+				"map entry must be tuple, but got %s", next.Type,
+			)
+		}
+
+		s.Read() // consume open paren
+
+		key := reflect.New(keyType)
+		val := reflect.New(valType)
+
+		err := decodeIntoValue(s, key)
+		if err != nil {
+			return err
+		}
+
+		if s.Peek().Type == RIGHT {
+			return fmt.Errorf("map entry tuples must have two elements")
+		}
+		if s.Peek().Type == EOF {
+			return fmt.Errorf("unexpected EOF while decoding map entry")
+		}
+
+		err = decodeIntoValue(s, val)
+		if err != nil {
+			return err
+		}
+
+		if s.Peek().Type != RIGHT {
+			return fmt.Errorf("map entry tuples must have two elements")
+		}
+		s.Read() // Consume closing paren
+
+		ret.SetMapIndex(key.Elem(), val.Elem())
 	}
 
 	v.Set(ret)

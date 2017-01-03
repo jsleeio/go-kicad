@@ -31,6 +31,9 @@ func TestDecode_valid(t *testing.T) {
 	sliceSlicePtr := func(s [][]string) *[][]string {
 		return &s
 	}
+	mapPtr := func(s map[string]string) *map[string]string {
+		return &s
+	}
 
 	tests := []struct {
 		Input  string
@@ -146,6 +149,14 @@ func TestDecode_valid(t *testing.T) {
 			Input:  `((hello world) () (I like pizza))`,
 			Target: sliceSlicePtr([][]string(nil)),
 			Want:   sliceSlicePtr([][]string{{"hello", "world"}, {}, {"I", "like", "pizza"}}),
+		},
+		{
+			Input:  `((greeting "hello world")(pizza_topping cheese))`,
+			Target: mapPtr(map[string]string{}),
+			Want: mapPtr(map[string]string{
+				"greeting":      "hello world",
+				"pizza_topping": "cheese",
+			}),
 		},
 	}
 
