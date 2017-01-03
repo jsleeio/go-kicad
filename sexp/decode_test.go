@@ -22,6 +22,9 @@ func TestDecode_valid(t *testing.T) {
 	bptr := func(i bool) *bool {
 		return &i
 	}
+	fptr := func(i float64) *float64 {
+		return &i
+	}
 
 	tests := []struct {
 		Input  string
@@ -102,6 +105,21 @@ func TestDecode_valid(t *testing.T) {
 			Input:  `false`,
 			Target: bptr(true),
 			Want:   bptr(false),
+		},
+		{
+			Input:  `1.2`,
+			Target: fptr(0.0),
+			Want:   fptr(1.2),
+		},
+		{
+			Input:  `-1.2`,
+			Target: fptr(0.0),
+			Want:   fptr(-1.2),
+		},
+		{
+			Input:  `-0.5`,
+			Target: fptr(0.0),
+			Want:   fptr(-0.5),
 		},
 	}
 
