@@ -19,6 +19,9 @@ func TestDecode_valid(t *testing.T) {
 	uiptr := func(i uint) *uint {
 		return &i
 	}
+	bptr := func(i bool) *bool {
+		return &i
+	}
 
 	tests := []struct {
 		Input  string
@@ -89,6 +92,16 @@ func TestDecode_valid(t *testing.T) {
 			Input:  `500`,
 			Target: uiptr(0),
 			Want:   uiptr(500),
+		},
+		{
+			Input:  `true`,
+			Target: bptr(false),
+			Want:   bptr(true),
+		},
+		{
+			Input:  `false`,
+			Target: bptr(true),
+			Want:   bptr(false),
 		},
 	}
 

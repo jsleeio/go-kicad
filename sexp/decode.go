@@ -24,6 +24,8 @@ func decodeIntoValue(s *Scanner, v reflect.Value) error {
 		return decodeString(s, v)
 	case reflect.Int, reflect.Uint:
 		return decodeInt(s, v)
+	case reflect.Bool:
+		return decodeBool(s, v)
 	default:
 		return &InvalidDecodeError{v.Type()}
 	}
@@ -79,6 +81,28 @@ func decodeInt(s *Scanner, v reflect.Value) error {
 	default:
 		return fmt.Errorf(
 			"unexpected %s while decoding into int",
+			next.Type,
+		)
+	}
+
+	s.Read() // consume the token
+
+	return nil
+}
+
+func decodeBool(s *Scanner, v reflect.Value) error {
+	next := s.Peek()
+
+	switch next.Type {
+	case RAW_STRING:
+		val, err := strconv.ParseBool(next.Data)
+		if err != nil {
+			return err
+		}
+		v.SetBool(val)
+	default:
+		return fmt.Errorf(
+			"unexpected %s while decoding into bool",
 			next.Type,
 		)
 	}
