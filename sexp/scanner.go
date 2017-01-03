@@ -103,10 +103,12 @@ func (s *Scanner) Peek() Token {
 		tokenType = QUOTE_STRING
 	}
 
-	return Token{
+	s.peeked = &Token{
 		Type: tokenType,
 		Data: data,
 	}
+
+	return *s.peeked
 }
 
 func (s *Scanner) Read() Token {
