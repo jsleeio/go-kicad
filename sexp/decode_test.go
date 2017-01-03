@@ -25,6 +25,12 @@ func TestDecode_valid(t *testing.T) {
 	fptr := func(i float64) *float64 {
 		return &i
 	}
+	slicePtr := func(s []string) *[]string {
+		return &s
+	}
+	sliceSlicePtr := func(s [][]string) *[][]string {
+		return &s
+	}
 
 	tests := []struct {
 		Input  string
@@ -120,6 +126,26 @@ func TestDecode_valid(t *testing.T) {
 			Input:  `-0.5`,
 			Target: fptr(0.0),
 			Want:   fptr(-0.5),
+		},
+		{
+			Input:  `()`,
+			Target: slicePtr([]string(nil)),
+			Want:   slicePtr([]string{}),
+		},
+		{
+			Input:  `(hello "world")`,
+			Target: slicePtr([]string(nil)),
+			Want:   slicePtr([]string{"hello", "world"}),
+		},
+		{
+			Input:  `(hello world I like pizza)`,
+			Target: slicePtr([]string(nil)),
+			Want:   slicePtr([]string{"hello", "world", "I", "like", "pizza"}),
+		},
+		{
+			Input:  `((hello world) () (I like pizza))`,
+			Target: sliceSlicePtr([][]string(nil)),
+			Want:   sliceSlicePtr([][]string{{"hello", "world"}, {}, {"I", "like", "pizza"}}),
 		},
 	}
 

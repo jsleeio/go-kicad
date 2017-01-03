@@ -28,6 +28,8 @@ func decodeIntoValue(s *Scanner, v reflect.Value) error {
 		return decodeBool(s, v)
 	case reflect.Float64:
 		return decodeFloat(s, v)
+	case reflect.Slice:
+		return decodeSlice(s, v)
 	default:
 		return &InvalidDecodeError{v.Type()}
 	}
@@ -132,6 +134,44 @@ func decodeBool(s *Scanner, v reflect.Value) error {
 	}
 
 	s.Read() // consume the token
+
+	return nil
+}
+
+func decodeSlice(s *Scanner, v reflect.Value) error {
+	next := s.Peek()
+	if next.Type != LEFT {
+		return fmt.Errorf(
+			"slice value cannot begin with %s", next.Type,
+		)
+	}
+	s.Read() // consume parenthesis
+
+	ret := reflect.MakeSlice(v.Type(), 0, 2)
+
+	elemType := v.Type().Elem()
+	for {
+		next := s.Peek()
+		if next.Type == RIGHT {
+			s.Read() // consume parenthesis
+			break
+		}
+		if next.Type == EOF {
+			return fmt.Errorf(
+				"unexpected EOF while decoding slice value",
+			)
+		}
+
+		elem := reflect.New(elemType)
+		err := decodeIntoValue(s, elem)
+		if err != nil {
+			return err
+		}
+
+		ret = reflect.Append(ret, elem.Elem())
+	}
+
+	v.Set(ret)
 
 	return nil
 }
