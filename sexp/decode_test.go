@@ -27,12 +27,20 @@ func TestDecode_valid(t *testing.T) {
 		Flags []string `kicad:",flat"`
 	}
 
+	type PCBNetClass struct {
+		Name        string   `kicad:""`
+		Description string   `kicad:""`
+		Clearance   float64  `kicad:"clearance"`
+		Nets        []string `kicad:"add_net,multi"`
+	}
+
 	type PCB struct {
-		Version int        `kicad:"version"`
-		General PCBGeneral `kicad:"general,flat"`
-		Page    string     `kicad:"page"`
-		Nets    []PCBNet   `kicad:"net,multi,flat"`
-		Layers  []PCBLayer `kicad:"layers,flat"`
+		Version    int           `kicad:"version"`
+		General    PCBGeneral    `kicad:"general,flat"`
+		Page       string        `kicad:"page"`
+		Nets       []PCBNet      `kicad:"net,multi,flat"`
+		Layers     []PCBLayer    `kicad:"layers,flat"`
+		NetClasses []PCBNetClass `kicad:"net_class,multi,flat"`
 	}
 
 	tests := []struct {
@@ -113,6 +121,33 @@ func TestDecode_valid(t *testing.T) {
 						Name:  "B.Cu",
 						Type:  "power",
 						Flags: []string{"hide"},
+					},
+				},
+			},
+		},
+		{
+			Input:  `(kicad_pcb (net_class Default "The default"))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want: &PCB{
+				NetClasses: []PCBNetClass{
+					{
+						Name:        "Default",
+						Description: "The default",
+					},
+				},
+			},
+		},
+		{
+			Input:  `(kicad_pcb (net_class a b (add_net foo) (add_net bar)))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want: &PCB{
+				NetClasses: []PCBNetClass{
+					{
+						Name:        "a",
+						Description: "b",
+						Nets:        []string{"foo", "bar"},
 					},
 				},
 			},
