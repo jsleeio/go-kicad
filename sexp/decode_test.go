@@ -10,6 +10,103 @@ import (
 )
 
 func TestDecode_valid(t *testing.T) {
+	type PCBGeneral struct {
+		Links int `kicad:"links"`
+		Nets  int `kicad:"nets"`
+	}
+
+	type PCBNet struct {
+		Index int    `kicad:""`
+		Name  string `kicad:""`
+	}
+
+	type PCB struct {
+		Version int        `kicad:"version"`
+		General PCBGeneral `kicad:"general,flat"`
+		Page    string     `kicad:"page"`
+		Nets    []PCBNet   `kicad:"net,multi,flat"`
+	}
+
+	tests := []struct {
+		Input  string
+		FileTy string
+		Target interface{}
+		Want   interface{}
+	}{
+		{
+			Input:  `(kicad_pcb)`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want:   &PCB{},
+		},
+		{
+			Input:  `(kicad_pcb (page "USLetter"))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want: &PCB{
+				Page: "USLetter",
+			},
+		},
+		{
+			Input:  `(kicad_pcb (page "USLetter") (general))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want: &PCB{
+				Page: "USLetter",
+			},
+		},
+		{
+			Input:  `(kicad_pcb (page "USLetter") (general (links 10)))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want: &PCB{
+				Page: "USLetter",
+				General: PCBGeneral{
+					Links: 10,
+				},
+			},
+		},
+		{
+			Input:  `(kicad_pcb (net 1 "Foo") (net 3 "Baz"))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want: &PCB{
+				Nets: []PCBNet{
+					{
+						Index: 1,
+						Name:  "Foo",
+					},
+					{
+						Index: 3,
+						Name:  "Baz",
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		testName := fmt.Sprintf("%s into %T", test.Input, test.Target)
+		t.Run(testName, func(t *testing.T) {
+			reader := strings.NewReader(test.Input)
+			err := Decode(reader, test.FileTy, test.Target)
+			if err != nil {
+				t.Fatalf("unexpected error: %s", err)
+			}
+
+			got := test.Target
+			want := test.Want
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf(
+					"incorrect result\ngot:  %swant: %s",
+					spew.Sdump(got), spew.Sdump(want),
+				)
+			}
+		})
+	}
+}
+
+func TestDecodeSimple_valid(t *testing.T) {
 	sptr := func(s string) *string {
 		return &s
 	}
@@ -164,7 +261,7 @@ func TestDecode_valid(t *testing.T) {
 		testName := fmt.Sprintf("%s into %T", test.Input, test.Target)
 		t.Run(testName, func(t *testing.T) {
 			reader := strings.NewReader(test.Input)
-			err := Decode(reader, test.Target)
+			err := DecodeSimple(reader, test.Target)
 			if err != nil {
 				t.Fatalf("unexpected error: %s", err)
 			}

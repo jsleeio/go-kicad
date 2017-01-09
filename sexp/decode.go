@@ -5,9 +5,53 @@ import (
 	"io"
 	"reflect"
 	"strconv"
+	"strings"
 )
 
-func Decode(r io.Reader, t interface{}) error {
+// Decode populates a struct passed in t (which must be a pointer to a struct)
+// if (and only if) the top-level file type keyword matches that given in
+// typeName.
+//
+// Kicad file formats all start with a top-level tuple whose first value
+// gives the file type and whose remaining values are key/value tuples. this
+// function is the main way to parse such a file into a struct.
+func Decode(r io.Reader, typeName string, t interface{}) error {
+	v := reflect.ValueOf(t)
+
+	if v.Kind() != reflect.Ptr || v.IsNil() {
+		return &InvalidDecodeError{v.Type()}
+	}
+
+	v = decodeIndirect(v)
+
+	if v.Type().Kind() != reflect.Struct {
+		return fmt.Errorf("Decode target must be pointer to struct, not %s", v.Type())
+	}
+
+	s := NewScanner(r)
+
+	open := s.Read()
+	if open.Type != LEFT {
+		return fmt.Errorf("must start with LEFT; got %s", open.Type)
+	}
+
+	typeTok := s.Read()
+	if typeTok.Type != RAW_STRING {
+		return fmt.Errorf("first element must be RAW_STRING; got %s", typeTok.Type)
+	}
+
+	if typeTok.Data != typeName {
+		return fmt.Errorf("want filetype %q but got %q", typeName, typeTok.Data)
+	}
+
+	return decodeSequenceIntoStruct(s, v, RIGHT)
+}
+
+// DecodeSimple writes a single value based on a sequence read from the given
+// reader. It can be used to decode isolated values, but Decode must be used
+// to decode the usual kicad convention of having a top-level tuple that is
+// a type name followed by a sequence of fields.
+func DecodeSimple(r io.Reader, t interface{}) error {
 	s := NewScanner(r)
 	return decodeIntoValue(s, reflect.ValueOf(t))
 }
@@ -32,9 +76,46 @@ func decodeIntoValue(s *Scanner, v reflect.Value) error {
 		return decodeSlice(s, v)
 	case reflect.Map:
 		return decodeMap(s, v)
+	case reflect.Struct:
+		return decodeStruct(s, v)
 	default:
 		return &InvalidDecodeError{v.Type()}
 	}
+}
+
+// decodeSkip skips the next value, leaving the scanner pointing at the
+// beginning of the following value. If the next value is a tuple then the
+// entire tuple (including any nested tuples) is skipped.
+func decodeSkip(s *Scanner) error {
+	next := s.Peek()
+
+	if next.Type == LEFT {
+		// We need to count open/close parens until we get back to
+		// our initial nesting level.
+		nest := 0
+		for {
+			token := s.Read()
+			switch token.Type {
+			case LEFT:
+				nest++
+			case RIGHT:
+				nest--
+				if nest == 0 {
+					return nil
+				}
+			case EOF:
+				return fmt.Errorf("unexpected EOF while skipping tuple")
+			}
+		}
+	}
+
+	if next.Type == RIGHT || next.Type == EOF {
+		return fmt.Errorf("no value to skip! found %s", next.Type)
+	}
+
+	s.Read() // consume single-token value
+
+	return nil
 }
 
 func decodeString(s *Scanner, v reflect.Value) error {
@@ -139,7 +220,6 @@ func decodeBool(s *Scanner, v reflect.Value) error {
 
 	return nil
 }
-
 func decodeSlice(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 	if next.Type != LEFT {
@@ -149,13 +229,20 @@ func decodeSlice(s *Scanner, v reflect.Value) error {
 	}
 	s.Read() // consume parenthesis
 
-	ret := reflect.MakeSlice(v.Type(), 0, 2)
+	empty := reflect.MakeSlice(v.Type(), 0, 2)
+	v.Set(empty)
+
+	return decodeSequenceIntoSlice(s, v, RIGHT)
+}
+
+func decodeSequenceIntoSlice(s *Scanner, v reflect.Value, endType TokenType) error {
+	ret := v
 
 	elemType := v.Type().Elem()
 	for {
 		next := s.Peek()
-		if next.Type == RIGHT {
-			s.Read() // consume parenthesis
+		if next.Type == endType {
+			s.Read() // consume end token
 			break
 		}
 		if next.Type == EOF {
@@ -240,6 +327,202 @@ func decodeMap(s *Scanner, v reflect.Value) error {
 	}
 
 	v.Set(ret)
+
+	return nil
+}
+
+func decodeStruct(s *Scanner, v reflect.Value) error {
+	next := s.Peek()
+	if next.Type != LEFT {
+		return fmt.Errorf(
+			"struct value cannot begin with %s", next.Type,
+		)
+	}
+	s.Read() // consume parenthesis
+
+	ty := v.Type()
+	ret := reflect.New(ty)
+	v.Set(ret.Elem())
+
+	return decodeSequenceIntoStruct(s, v, RIGHT)
+}
+
+func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) error {
+	ty := v.Type()
+	type Field struct {
+		Index int
+		Flat  bool
+		Multi bool
+	}
+
+	var posFields []*Field
+	nameFields := make(map[string]*Field)
+	for i := 0; i < ty.NumField(); i++ {
+		field := ty.Field(i)
+		tag, tagSet := field.Tag.Lookup("kicad")
+		if !tagSet {
+			continue
+		}
+
+		parts := strings.Split(tag, ",")
+		key := parts[0]
+		flags := parts[1:]
+		fieldDef := &Field{
+			Index: i,
+		}
+		for _, flag := range flags {
+			switch flag {
+			case "flat":
+				fieldDef.Flat = true
+			case "multi":
+				fieldDef.Multi = true
+			default:
+				return fmt.Errorf(
+					"invalid kicad decode flag %q on %s",
+					flag, field.Name,
+				)
+			}
+		}
+
+		chkType := field.Type
+		if fieldDef.Multi {
+			if chkType.Kind() != reflect.Slice {
+				return fmt.Errorf("'multi' flag used on non-slice field %s", field.Name)
+			}
+			chkType = chkType.Elem()
+		}
+
+		if fieldDef.Flat {
+			kind := chkType.Kind()
+			if kind != reflect.Slice && kind != reflect.Struct {
+				return fmt.Errorf("'flat' flag cannot be used on non-slice, non-struct field %s", field.Name)
+			}
+		}
+
+		if key == "" {
+			posFields = append(posFields, fieldDef)
+		} else {
+			nameFields[key] = fieldDef
+		}
+
+	}
+
+	for {
+		next := s.Peek()
+		if next.Type == endType {
+			s.Read()
+			break
+		}
+		if next.Type == EOF {
+			return fmt.Errorf("unexpected EOF decoding struct value")
+		}
+
+		var fieldDef *Field
+		needClose := false
+		if len(posFields) > 0 {
+			fieldDef = posFields[0]
+			posFields = posFields[1:]
+		} else {
+			if next.Type != LEFT {
+				return fmt.Errorf(
+					"named struct field must start with LEFT, but got %s",
+					next.Type,
+				)
+			}
+			s.Read() // consume parenthesis
+
+			label := s.Peek()
+			if label.Type != RAW_STRING {
+				return fmt.Errorf(
+					"struct name must be RAW_STRING, but got %s",
+					label.Type,
+				)
+			}
+			s.Read() // consume label
+
+			fieldDef = nameFields[label.Data]
+			needClose = true
+		}
+
+		var fieldValue reflect.Value
+		var fieldType reflect.Type
+		var valType reflect.Type
+		var tv reflect.Value
+
+		if fieldDef == nil {
+			err := decodeSkip(s)
+			if err != nil {
+				return err
+			}
+			goto Done
+		}
+
+		fieldValue = v.Field(fieldDef.Index)
+		fieldType = fieldValue.Type()
+
+		valType = fieldType
+		if fieldDef.Multi {
+			// Multi fields are slices of the target type, which we
+			// append to for each new instance. Thus our value type
+			// is the slice's element type.
+			valType = fieldType.Elem()
+		}
+
+		tv = reflect.New(valType)
+
+		if fieldDef.Flat {
+			// For "Flat" we are expecting the elements of a slice or the
+			// fields of a struct to appear directly after the field name,
+			// without an additional wrapping tuple.
+			switch valType.Kind() {
+			case reflect.Struct:
+				err := decodeSequenceIntoStruct(s, tv.Elem(), RIGHT)
+				if err != nil {
+					return err
+				}
+				needClose = false // already closed by decodeSequenceIntoStruct
+			case reflect.Slice:
+				err := decodeSequenceIntoSlice(s, tv.Elem(), RIGHT)
+				if err != nil {
+					return err
+				}
+				needClose = false // already closed by decodeSequenceIntoSlice
+			default:
+				// Should never happen due to validation above
+				panic("non-slice and non-struct flat target")
+			}
+		} else {
+			err := decodeIntoValue(s, tv)
+			if err != nil {
+				return err
+			}
+		}
+
+		if fieldDef.Multi {
+			fieldValue.Set(reflect.Append(fieldValue, tv.Elem()))
+		} else {
+			fieldValue.Set(tv.Elem())
+		}
+
+	Done:
+
+		if needClose {
+			close := s.Read()
+			if close.Type != RIGHT {
+				return fmt.Errorf(
+					"missing closing paren for struct tuple; got %s",
+					close.Type,
+				)
+			}
+		}
+	}
+
+	if len(posFields) > 0 {
+		return fmt.Errorf(
+			"insufficient values for positional fields %#v",
+			posFields,
+		)
+	}
 
 	return nil
 }
