@@ -44,7 +44,12 @@ func Decode(r io.Reader, typeName string, t interface{}) error {
 		return fmt.Errorf("want filetype %q but got %q", typeName, typeTok.Data)
 	}
 
-	return decodeSequenceIntoStruct(s, v, RIGHT)
+	err := decodeSequenceIntoStruct(s, v, RIGHT)
+	if err != nil {
+		return err
+	}
+	s.Read() // consume closing paren
+	return nil
 }
 
 // DecodeSimple writes a single value based on a sequence read from the given
@@ -220,6 +225,7 @@ func decodeBool(s *Scanner, v reflect.Value) error {
 
 	return nil
 }
+
 func decodeSlice(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 	if next.Type != LEFT {
@@ -232,7 +238,12 @@ func decodeSlice(s *Scanner, v reflect.Value) error {
 	empty := reflect.MakeSlice(v.Type(), 0, 2)
 	v.Set(empty)
 
-	return decodeSequenceIntoSlice(s, v, RIGHT)
+	err := decodeSequenceIntoSlice(s, v, RIGHT)
+	if err != nil {
+		return err
+	}
+	s.Read() // consume closing paren
+	return nil
 }
 
 func decodeSequenceIntoSlice(s *Scanner, v reflect.Value, endType TokenType) error {
@@ -242,7 +253,6 @@ func decodeSequenceIntoSlice(s *Scanner, v reflect.Value, endType TokenType) err
 	for {
 		next := s.Peek()
 		if next.Type == endType {
-			s.Read() // consume end token
 			break
 		}
 		if next.Type == EOF {
@@ -344,7 +354,12 @@ func decodeStruct(s *Scanner, v reflect.Value) error {
 	ret := reflect.New(ty)
 	v.Set(ret.Elem())
 
-	return decodeSequenceIntoStruct(s, v, RIGHT)
+	err := decodeSequenceIntoStruct(s, v, RIGHT)
+	if err != nil {
+		return err
+	}
+	s.Read() // consume closing paren
+	return nil
 }
 
 func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) error {
@@ -410,7 +425,6 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 	for {
 		next := s.Peek()
 		if next.Type == endType {
-			s.Read()
 			break
 		}
 		if next.Type == EOF {
@@ -480,13 +494,11 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 				if err != nil {
 					return err
 				}
-				needClose = false // already closed by decodeSequenceIntoStruct
 			case reflect.Slice:
 				err := decodeSequenceIntoSlice(s, tv.Elem(), RIGHT)
 				if err != nil {
 					return err
 				}
-				needClose = false // already closed by decodeSequenceIntoSlice
 			default:
 				// Should never happen due to validation above
 				panic("non-slice and non-struct flat target")
@@ -518,10 +530,15 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 	}
 
 	if len(posFields) > 0 {
-		return fmt.Errorf(
-			"insufficient values for positional fields %#v",
-			posFields,
-		)
+		// If there is one remaining field and it is a "flat" field then
+		// this is acceptable since it is allowed to "consume" the zero
+		// remaining values.
+		if len(posFields) != 1 || !posFields[0].Flat {
+			return fmt.Errorf(
+				"insufficient values for positional fields %#v",
+				posFields,
+			)
+		}
 	}
 
 	return nil

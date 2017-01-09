@@ -20,11 +20,19 @@ func TestDecode_valid(t *testing.T) {
 		Name  string `kicad:""`
 	}
 
+	type PCBLayer struct {
+		Index int      `kicad:""`
+		Name  string   `kicad:""`
+		Type  string   `kicad:""`
+		Flags []string `kicad:",flat"`
+	}
+
 	type PCB struct {
 		Version int        `kicad:"version"`
 		General PCBGeneral `kicad:"general,flat"`
 		Page    string     `kicad:"page"`
 		Nets    []PCBNet   `kicad:"net,multi,flat"`
+		Layers  []PCBLayer `kicad:"layers,flat"`
 	}
 
 	tests := []struct {
@@ -79,6 +87,32 @@ func TestDecode_valid(t *testing.T) {
 					{
 						Index: 3,
 						Name:  "Baz",
+					},
+				},
+			},
+		},
+		{
+			Input:  `(kicad_pcb (layers))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want:   &PCB{},
+		},
+		{
+			Input:  `(kicad_pcb (layers (1 F.Cu signal) (2 B.Cu power hide)))`,
+			FileTy: "kicad_pcb",
+			Target: &PCB{},
+			Want: &PCB{
+				Layers: []PCBLayer{
+					{
+						Index: 1,
+						Name:  "F.Cu",
+						Type:  "signal",
+					},
+					{
+						Index: 2,
+						Name:  "B.Cu",
+						Type:  "power",
+						Flags: []string{"hide"},
 					},
 				},
 			},
