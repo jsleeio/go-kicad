@@ -109,13 +109,13 @@ func decodeSkip(s *Scanner) error {
 					return nil
 				}
 			case EOF:
-				return fmt.Errorf("unexpected EOF while skipping tuple")
+				return fmt.Errorf("line %d: unexpected EOF while skipping tuple", s.lines)
 			}
 		}
 	}
 
 	if next.Type == RIGHT || next.Type == EOF {
-		return fmt.Errorf("no value to skip! found %s", next.Type)
+		return fmt.Errorf("line %d: no value to skip! found %s", s.lines, next.Type)
 	}
 
 	s.Read() // consume single-token value
@@ -137,7 +137,8 @@ func decodeString(s *Scanner, v reflect.Value) error {
 		v.SetString(str)
 	default:
 		return fmt.Errorf(
-			"unexpected %s while decoding into string",
+			"line %d: unexpected %s while decoding into string",
+			s.lines,
 			next.Type,
 		)
 	}
@@ -179,7 +180,8 @@ func decodeInt(s *Scanner, v reflect.Value) error {
 		}
 	default:
 		return fmt.Errorf(
-			"unexpected %s while decoding into int",
+			"line %d: unexpected %s while decoding into int",
+			s.lines,
 			next.Type,
 		)
 	}
@@ -201,7 +203,8 @@ func decodeFloat(s *Scanner, v reflect.Value) error {
 		v.SetFloat(val)
 	default:
 		return fmt.Errorf(
-			"unexpected %s while decoding into float",
+			"line %d: unexpected %s while decoding into float",
+			s.lines,
 			next.Type,
 		)
 	}
@@ -223,7 +226,8 @@ func decodeBool(s *Scanner, v reflect.Value) error {
 		v.SetBool(val)
 	default:
 		return fmt.Errorf(
-			"unexpected %s while decoding into bool",
+			"line %d: unexpected %s while decoding into bool",
+			s.lines,
 			next.Type,
 		)
 	}
@@ -237,7 +241,7 @@ func decodeSlice(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 	if next.Type != LEFT {
 		return fmt.Errorf(
-			"slice value cannot begin with %s", next.Type,
+			"line %d: slice value cannot begin with %s", s.lines, next.Type,
 		)
 	}
 	s.Read() // consume parenthesis
@@ -264,7 +268,7 @@ func decodeSequenceIntoSlice(s *Scanner, v reflect.Value, endType TokenType) err
 		}
 		if next.Type == EOF {
 			return fmt.Errorf(
-				"unexpected EOF while decoding slice value",
+				"line %d: unexpected EOF while decoding slice value", s.lines,
 			)
 		}
 
@@ -286,7 +290,7 @@ func decodeMap(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 	if next.Type != LEFT {
 		return fmt.Errorf(
-			"map value cannot begin with %s", next.Type,
+			"line %d: map value cannot begin with %s", s.lines, next.Type,
 		)
 	}
 	s.Read() // consume parenthesis
@@ -303,13 +307,13 @@ func decodeMap(s *Scanner, v reflect.Value) error {
 		}
 		if next.Type == EOF {
 			return fmt.Errorf(
-				"unexpected EOF while decoding slice value",
+				"line %d: unexpected EOF while decoding slice value", s.lines,
 			)
 		}
 
 		if next.Type != LEFT {
 			return fmt.Errorf(
-				"map entry must be tuple, but got %s", next.Type,
+				"line %d: map entry must be tuple, but got %s", s.lines, next.Type,
 			)
 		}
 
@@ -324,19 +328,19 @@ func decodeMap(s *Scanner, v reflect.Value) error {
 		}
 
 		if s.Peek().Type == RIGHT {
-			return fmt.Errorf("map entry tuples must have two elements")
+			return fmt.Errorf("line %d: map entry tuples must have two elements", s.lines)
 		}
 		if s.Peek().Type == EOF {
-			return fmt.Errorf("unexpected EOF while decoding map entry")
+			return fmt.Errorf("line %d: unexpected EOF while decoding map entry", s.lines)
 		}
 
 		err = decodeIntoValue(s, val)
 		if err != nil {
-			return err
+			return fmt.Errorf("line %d: %w", s.lines, err)
 		}
 
 		if s.Peek().Type != RIGHT {
-			return fmt.Errorf("map entry tuples must have two elements")
+			return fmt.Errorf("line %d: map entry tuples must have two elements", s.lines)
 		}
 		s.Read() // Consume closing paren
 
@@ -352,7 +356,7 @@ func decodeStruct(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 	if next.Type != LEFT {
 		return fmt.Errorf(
-			"struct value cannot begin with %s", next.Type,
+			"line %d: struct value cannot begin with %s", s.lines, next.Type,
 		)
 	}
 	s.Read() // consume parenthesis
@@ -400,8 +404,8 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 				fieldDef.Multi = true
 			default:
 				return fmt.Errorf(
-					"invalid kicad decode flag %q on %s",
-					flag, field.Name,
+					"line %d: invalid kicad decode flag %q on %s",
+					s.lines, flag, field.Name,
 				)
 			}
 		}
@@ -409,7 +413,7 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 		chkType := field.Type
 		if fieldDef.Multi {
 			if chkType.Kind() != reflect.Slice {
-				return fmt.Errorf("'multi' flag used on non-slice field %s", field.Name)
+				return fmt.Errorf("line %d: 'multi' flag used on non-slice field %s", s.lines, field.Name)
 			}
 			chkType = chkType.Elem()
 		}
@@ -417,7 +421,7 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 		if fieldDef.Flat {
 			kind := chkType.Kind()
 			if kind != reflect.Slice && kind != reflect.Struct {
-				return fmt.Errorf("'flat' flag cannot be used on non-slice, non-struct field %s", field.Name)
+				return fmt.Errorf("line %d: 'flat' flag cannot be used on non-slice, non-struct field %s", s.lines, field.Name)
 			}
 		}
 
@@ -435,7 +439,7 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 			break
 		}
 		if next.Type == EOF {
-			return fmt.Errorf("unexpected EOF decoding struct value")
+			return fmt.Errorf("line %d: unexpected EOF decoding struct value", s.lines)
 		}
 
 		var fieldDef *Field
@@ -446,8 +450,8 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 		} else {
 			if next.Type != LEFT {
 				return fmt.Errorf(
-					"named struct field must start with LEFT, but got %s",
-					next.Type,
+					"line %d: named struct field must start with LEFT, but got %s (context: %+v)",
+					s.lines, next.Type, next,
 				)
 			}
 			s.Read() // consume parenthesis
@@ -455,8 +459,8 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 			label := s.Peek()
 			if label.Type != RAW_STRING {
 				return fmt.Errorf(
-					"struct name must be RAW_STRING, but got %s",
-					label.Type,
+					"line %d: struct name must be RAW_STRING, but got %s",
+					s.lines, label.Type,
 				)
 			}
 			s.Read() // consume label
@@ -529,7 +533,8 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 			close := s.Read()
 			if close.Type != RIGHT {
 				return fmt.Errorf(
-					"missing closing paren for struct tuple; got %s",
+					"line %d: missing closing paren for struct tuple; got %s",
+					s.lines,
 					close.Type,
 				)
 			}

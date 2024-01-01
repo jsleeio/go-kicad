@@ -9,6 +9,7 @@ import (
 type Scanner struct {
 	s      *bufio.Scanner
 	peeked *Token
+	lines  int
 	eof    bool
 }
 
@@ -46,7 +47,8 @@ func (b scanError) Error() string {
 // NewScanner creates a new scanner that finds tokens in the given reader.
 func NewScanner(r io.Reader) *Scanner {
 	ret := &Scanner{
-		s: bufio.NewScanner(r),
+		lines: 1,
+		s:     bufio.NewScanner(r),
 	}
 	ret.s.Split(ret.findToken)
 	return ret
@@ -176,7 +178,10 @@ Bytes:
 		b = b[1:]
 
 		switch next {
-		case 10, 13, 32, 8, 0:
+		case 10:
+			s.lines++
+			size++
+		case 13, 32, 8, 0:
 			size++
 		default:
 			break Bytes
@@ -217,7 +222,7 @@ Bytes:
 	for {
 		if len(b) == 0 {
 			if eof {
-				return 0, nil, fmt.Errorf("unexpected EOF in string %q", data)
+				return 0, nil, fmt.Errorf("line %d: unexpected EOF in string %q", s.lines, data)
 			}
 
 			// Request more bytes
