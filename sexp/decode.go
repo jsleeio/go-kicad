@@ -161,7 +161,14 @@ func decodeInt(s *Scanner, v reflect.Value) error {
 			}
 			v.SetInt(val)
 		case reflect.Uint:
-			val, err := strconv.ParseUint(next.Data, 10, 64)
+			base := 10
+			// kicad sometimes emits numeric values in hex, with underscores
+			token := strings.ReplaceAll(next.Data, "_", "")
+			if strings.HasPrefix(token, "0x") {
+				base = 16
+				token = strings.TrimPrefix(token, "0x")
+			}
+			val, err := strconv.ParseUint(token, base, 64)
 			if err != nil {
 				return err
 			}

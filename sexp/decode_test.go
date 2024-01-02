@@ -272,6 +272,21 @@ func TestDecodeSimple_valid(t *testing.T) {
 			Want:   uiptr(500),
 		},
 		{
+			Input:  `0xdeadbeef`,
+			Target: uiptr(0),
+			Want:   uiptr(0xdeadbeef),
+		},
+		{
+			Input:  `0xfaded_face`,
+			Target: uiptr(0),
+			Want:   uiptr(0xfadedface),
+		},
+		{
+			Input:  `0xfeed_face_cafe`,
+			Target: uiptr(0),
+			Want:   uiptr(0xfeedfacecafe),
+		},
+		{
 			Input:  `true`,
 			Target: bptr(false),
 			Want:   bptr(true),
