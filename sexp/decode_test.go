@@ -292,7 +292,17 @@ func TestDecodeSimple_valid(t *testing.T) {
 			Want:   bptr(true),
 		},
 		{
+			Input:  `yes`,
+			Target: bptr(false),
+			Want:   bptr(true),
+		},
+		{
 			Input:  `false`,
+			Target: bptr(true),
+			Want:   bptr(false),
+		},
+		{
+			Input:  `no`,
 			Target: bptr(true),
 			Want:   bptr(false),
 		},

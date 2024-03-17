@@ -219,9 +219,15 @@ func decodeBool(s *Scanner, v reflect.Value) error {
 
 	switch next.Type {
 	case RAW_STRING:
-		val, err := strconv.ParseBool(next.Data)
-		if err != nil {
-			return err
+		var val bool
+		lower := strings.ToLower(next.Data)
+		switch {
+		case lower == "false" || lower == "no":
+			val = false
+		case lower == "true" || lower == "yes":
+			val = true
+		default:
+			return fmt.Errorf("invalid boolean value: %s", next.Data)
 		}
 		v.SetBool(val)
 	default:
