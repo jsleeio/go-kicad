@@ -1,3 +1,8 @@
+// Package sexp implements a scanner and decoder for S-expressions as used in
+// various kinds of Kicad files.
+//
+// It does *not* provide Go structs matching the Kicad file formats; those are
+// elsewhere.
 package sexp
 
 import (
@@ -6,6 +11,7 @@ import (
 	"io"
 )
 
+// Scanner contains the state for an S-expression token scanner.
 type Scanner struct {
 	s      *bufio.Scanner
 	peeked *Token
@@ -13,33 +19,47 @@ type Scanner struct {
 	eof    bool
 }
 
+// Token contains information about a single S-expression token, such as left
+// or right parentheses, a quoted string, a number, and so on.
 type Token struct {
 	Type TokenType
 	Data string
 }
 
+// TokenType stores a token type identifier
+//
 //go:generate stringer -type=TokenType
 type TokenType rune
 
 const (
-	RAW_STRING   TokenType = 'B'
-	QUOTE_STRING TokenType = 'Q'
+	// RAWSTRING tokens are strings that aren't quoted. Example: abc-def-123
+	RAWSTRING TokenType = 'B'
+	// QUOTESTRING tokens are strings that are quoted. Example: "abc-def-123"
+	QUOTESTRING TokenType = 'Q'
 
+	// NUMBER tokens are numbers in hexadecimal, decimal or floating point forms.
+	// Examples: 0xdeadface, 123, -1, 3.1459
 	NUMBER TokenType = 'N'
-	RIGHT  TokenType = ')'
-	LEFT   TokenType = '('
+	// RIGHT tokens are a single closing parenthesis: )
+	RIGHT TokenType = ')'
+	// LEFT tokens are a single opening parenthesis: (
+	LEFT TokenType = '('
 
+	// EOF tokens are a synthetic token that indicates end of stream
 	EOF TokenType = '␄'
 
+	// INVALID tokens indicate an error state
 	INVALID TokenType = '�'
 )
 
+// GoString returns the name of the Go constant indicating a token type
 func (t TokenType) GoString() string {
 	return fmt.Sprintf("sexp.%s", t.String())
 }
 
 type scanError byte
 
+// Error() returns a specialized error from the Scanner
 func (b scanError) Error() string {
 	return fmt.Sprintf("invalid byte %q", byte(b))
 }
@@ -96,13 +116,13 @@ func (s *Scanner) Peek() Token {
 	}
 
 	// Classify the token
-	tokenType := RAW_STRING
+	tokenType := RAWSTRING
 	switch {
 	case data == "(" || data == ")":
 		// The parens are their own token value, so we can cheat here
 		tokenType = TokenType(data[0])
 	case data[0] == '"':
-		tokenType = QUOTE_STRING
+		tokenType = QUOTESTRING
 	}
 
 	s.peeked = &Token{
@@ -113,6 +133,7 @@ func (s *Scanner) Peek() Token {
 	return *s.peeked
 }
 
+// Read returns the next token from the stream, if available
 func (s *Scanner) Read() Token {
 	token := s.Peek()
 	if token.Type != EOF {
@@ -121,47 +142,40 @@ func (s *Scanner) Read() Token {
 	return token
 }
 
-func (s *Scanner) findToken(data []byte, eof bool) (int, []byte, error) {
-
+// findToken implements the bufio.SplitFunc interface for lexing S-expressions
+func (s *Scanner) findToken(data []byte, eof bool) (advance int, token []byte, err error) {
 	{
-		size, skipData, err := s.scanIrrelevant(data, eof)
-		if size != 0 || skipData != nil || err != nil {
-			return size, []byte{}, err
+		size, skipData, skipErr := s.scanIrrelevant(data, eof)
+		if size != 0 || skipData != nil || skipErr != nil {
+			return size, []byte{}, skipErr
 		}
 	}
-
 	if len(data) == 0 {
 		return 0, nil, nil
 	}
-
 	next := data[0]
-
 	switch {
-
 	case next == '(' || next == ')':
 		return 1, data[:1], nil
-
 	case next == '"':
 		return s.scanString(data, eof)
-
 	default:
 		// Everything else is treated as a raw token
 		return s.scanRaw(data, eof)
 	}
 }
 
-func (s *Scanner) scanIrrelevant(data []byte, eof bool) (int, []byte, error) {
+func (s *Scanner) scanIrrelevant(data []byte, eof bool) (advance int, token []byte, err error) {
 	if len(data) == 0 {
+		// tell the scanner to read more data
 		return 0, nil, nil
 	}
-
 	switch data[0] {
-	case 10, 13, 32, 8, 0:
+	case 10, 13, 32, 9, 0:
 		return s.scanWhitespace(data, eof)
 	case '#':
 		return s.scanComment(data, eof)
 	}
-
 	return 0, nil, nil
 }
 
@@ -179,15 +193,14 @@ Bytes:
 
 		switch next {
 		case 10:
-			s.lines++
 			size++
-		case 13, 32, 8, 0:
+			s.lines++
+		case 0, 9, 13, 32:
 			size++
 		default:
 			break Bytes
 		}
 	}
-
 	return size, nil, nil
 }
 
@@ -266,7 +279,7 @@ Bytes:
 		b = b[1:]
 
 		switch next {
-		case 10, 13, 32, 8, 0, '(', ')', '#':
+		case 10, 13, 32, 9, 0, '(', ')', '#':
 			break Bytes
 		}
 

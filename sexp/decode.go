@@ -1,3 +1,4 @@
+// Package sexp ...
 package sexp
 
 import (
@@ -36,15 +37,15 @@ func Decode(r io.Reader, typeName string, t interface{}) error {
 	}
 
 	typeTok := s.Read()
-	if typeTok.Type != RAW_STRING {
-		return fmt.Errorf("first element must be RAW_STRING; got %s", typeTok.Type)
+	if typeTok.Type != RAWSTRING {
+		return fmt.Errorf("first element must be RAWSTRING; got %s", typeTok.Type)
 	}
 
 	if typeTok.Data != typeName {
 		return fmt.Errorf("want filetype %q but got %q", typeName, typeTok.Data)
 	}
 
-	err := decodeSequenceIntoStruct(s, v, RIGHT)
+	err := decodeSequenceIntoStruct(s, v)
 	if err != nil {
 		return err
 	}
@@ -127,9 +128,9 @@ func decodeString(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 
 	switch next.Type {
-	case RAW_STRING:
+	case RAWSTRING:
 		v.SetString(next.Data)
-	case QUOTE_STRING:
+	case QUOTESTRING:
 		str, err := unquoteString(next.Data)
 		if err != nil {
 			return err
@@ -152,7 +153,7 @@ func decodeInt(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 
 	switch next.Type {
-	case RAW_STRING:
+	case RAWSTRING:
 		switch v.Kind() {
 		// TODO: kicad additionally supports exponents
 		case reflect.Int:
@@ -171,7 +172,7 @@ func decodeInt(s *Scanner, v reflect.Value) error {
 			}
 			val, err := strconv.ParseUint(token, base, 64)
 			if err != nil {
-				return err
+				return fmt.Errorf("line %d: attempting to parse unsigned int value '%v' as base %d: %v", s.lines, token, base, err)
 			}
 			v.SetUint(val)
 		default:
@@ -195,7 +196,7 @@ func decodeFloat(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 
 	switch next.Type {
-	case RAW_STRING:
+	case RAWSTRING:
 		val, err := strconv.ParseFloat(next.Data, 64)
 		if err != nil {
 			return err
@@ -218,7 +219,7 @@ func decodeBool(s *Scanner, v reflect.Value) error {
 	next := s.Peek()
 
 	switch next.Type {
-	case RAW_STRING:
+	case RAWSTRING:
 		var val bool
 		lower := strings.ToLower(next.Data)
 		switch {
@@ -227,7 +228,7 @@ func decodeBool(s *Scanner, v reflect.Value) error {
 		case lower == "true" || lower == "yes":
 			val = true
 		default:
-			return fmt.Errorf("invalid boolean value: %s", next.Data)
+			return fmt.Errorf("line %d: invalid boolean value: %s", s.lines, next.Data)
 		}
 		v.SetBool(val)
 	default:
@@ -255,7 +256,7 @@ func decodeSlice(s *Scanner, v reflect.Value) error {
 	empty := reflect.MakeSlice(v.Type(), 0, 2)
 	v.Set(empty)
 
-	err := decodeSequenceIntoSlice(s, v, RIGHT)
+	err := decodeSequenceIntoSlice(s, v)
 	if err != nil {
 		return err
 	}
@@ -263,13 +264,13 @@ func decodeSlice(s *Scanner, v reflect.Value) error {
 	return nil
 }
 
-func decodeSequenceIntoSlice(s *Scanner, v reflect.Value, endType TokenType) error {
+func decodeSequenceIntoSlice(s *Scanner, v reflect.Value) error {
 	ret := v
 
 	elemType := v.Type().Elem()
 	for {
 		next := s.Peek()
-		if next.Type == endType {
+		if next.Type == RIGHT {
 			break
 		}
 		if next.Type == EOF {
@@ -371,7 +372,7 @@ func decodeStruct(s *Scanner, v reflect.Value) error {
 	ret := reflect.New(ty)
 	v.Set(ret.Elem())
 
-	err := decodeSequenceIntoStruct(s, v, RIGHT)
+	err := decodeSequenceIntoStruct(s, v)
 	if err != nil {
 		return err
 	}
@@ -379,7 +380,7 @@ func decodeStruct(s *Scanner, v reflect.Value) error {
 	return nil
 }
 
-func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) error {
+func decodeSequenceIntoStruct(s *Scanner, v reflect.Value) error {
 	ty := v.Type()
 	type Field struct {
 		Index int
@@ -441,7 +442,7 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 
 	for {
 		next := s.Peek()
-		if next.Type == endType {
+		if next.Type == RIGHT {
 			break
 		}
 		if next.Type == EOF {
@@ -456,16 +457,16 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 		} else {
 			if next.Type != LEFT {
 				return fmt.Errorf(
-					"line %d: named struct field must start with LEFT, but got %s (context: %+v)",
-					s.lines, next.Type, next,
+					"line %d: named struct field must start with LEFT, but got %v with content %q)",
+					s.lines, next.Type, next.Data,
 				)
 			}
 			s.Read() // consume parenthesis
 
 			label := s.Peek()
-			if label.Type != RAW_STRING {
+			if label.Type != RAWSTRING {
 				return fmt.Errorf(
-					"line %d: struct name must be RAW_STRING, but got %s",
+					"line %d: struct name must be RAWSTRING, but got %s",
 					s.lines, label.Type,
 				)
 			}
@@ -507,12 +508,12 @@ func decodeSequenceIntoStruct(s *Scanner, v reflect.Value, endType TokenType) er
 			// without an additional wrapping tuple.
 			switch valType.Kind() {
 			case reflect.Struct:
-				err := decodeSequenceIntoStruct(s, tv.Elem(), RIGHT)
+				err := decodeSequenceIntoStruct(s, tv.Elem())
 				if err != nil {
 					return err
 				}
 			case reflect.Slice:
-				err := decodeSequenceIntoSlice(s, tv.Elem(), RIGHT)
+				err := decodeSequenceIntoSlice(s, tv.Elem())
 				if err != nil {
 					return err
 				}

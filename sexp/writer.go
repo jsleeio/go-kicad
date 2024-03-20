@@ -26,6 +26,7 @@ const (
 	delimIndent delimType = 2
 )
 
+// NewWriter returns a new S-expressions Writer structure
 func NewWriter(w io.Writer) *Writer {
 	return &Writer{
 		w: w,
@@ -102,6 +103,8 @@ func (w *Writer) WriteRawString(str string) error {
 	return nil
 }
 
+// WriteQuoteString writes a quoted string token to the output, including
+// performing any required escaping (\n, \t, etc)
 func (w *Writer) WriteQuoteString(str string) error {
 	if w.writtenOneValue {
 		return errors.New("can't begin a second top-level value")
